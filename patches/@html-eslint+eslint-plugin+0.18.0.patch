@@ -1,0 +1,279 @@
+diff --git a/node_modules/@html-eslint/eslint-plugin/lib/rules/index.js b/node_modules/@html-eslint/eslint-plugin/lib/rules/index.js
+index 1f9a4d3..4d19032 100644
+--- a/node_modules/@html-eslint/eslint-plugin/lib/rules/index.js
++++ b/node_modules/@html-eslint/eslint-plugin/lib/rules/index.js
+@@ -10,6 +10,8 @@ const elementNewLine = require("./element-newline");
+ const noSkipHeadingLevels = require("./no-skip-heading-levels");
+ const indent = require("./indent");
+ const requireLiContainer = require("./require-li-container");
++const requireListContainer = require("./require-list-container");
++const requireTextContext = require("./require-text-context");
+ const quotes = require("./quotes");
+ const idNamingConvention = require("./id-naming-convention");
+ const noObsoleteTags = require("./no-obsolete-tags");
+@@ -29,6 +31,7 @@ const noMultipleEmptyLines = require("./no-multiple-empty-lines");
+ const noAccesskeyAttrs = require("./no-accesskey-attrs");
+ const noRestrictedAttrs = require("./no-restricted-attrs");
+ const noTrailingSpaces = require("./no-trailing-spaces");
++const noTrailingBr = require("./no-trailing-br");
+ const requireAttrs = require("./require-attrs");
+ 
+ module.exports = {
+@@ -43,6 +46,8 @@ module.exports = {
+   "element-newline": elementNewLine,
+   "no-skip-heading-levels": noSkipHeadingLevels,
+   "require-li-container": requireLiContainer,
++  "require-list-container": requireListContainer,
++  "require-text-context": requireTextContext,
+   indent: indent,
+   quotes: quotes,
+   "id-naming-convention": idNamingConvention,
+@@ -64,4 +69,5 @@ module.exports = {
+   "no-accesskey-attrs": noAccesskeyAttrs,
+   "no-restricted-attrs": noRestrictedAttrs,
+   "no-trailing-spaces": noTrailingSpaces,
++  "no-trailing-br": noTrailingBr,
+ };
+diff --git a/node_modules/@html-eslint/eslint-plugin/lib/rules/no-duplicate-attrs.js b/node_modules/@html-eslint/eslint-plugin/lib/rules/no-duplicate-attrs.js
+index 02dd4dc..cbedc5c 100644
+--- a/node_modules/@html-eslint/eslint-plugin/lib/rules/no-duplicate-attrs.js
++++ b/node_modules/@html-eslint/eslint-plugin/lib/rules/no-duplicate-attrs.js
+@@ -44,7 +44,7 @@ module.exports = {
+                 messageId: MESSAGE_IDS.DUPLICATE_ATTRS,
+               });
+             } else {
+-              attrsSet.add(attr.key.value);
++              attr.key && attrsSet.add(attr.key.value);
+             }
+           });
+         }
+diff --git a/node_modules/@html-eslint/eslint-plugin/lib/rules/no-inline-styles.js b/node_modules/@html-eslint/eslint-plugin/lib/rules/no-inline-styles.js
+index ed73ee4..2b0f049 100644
+--- a/node_modules/@html-eslint/eslint-plugin/lib/rules/no-inline-styles.js
++++ b/node_modules/@html-eslint/eslint-plugin/lib/rules/no-inline-styles.js
+@@ -15,7 +15,7 @@ module.exports = {
+       recommended: false,
+     },
+ 
+-    fixable: null,
++    fixable: true,
+     schema: [],
+     messages: {
+       [MESSAGE_IDS.INLINE_STYLE]: "Unexpected usage of inline style",
+@@ -30,6 +30,9 @@ module.exports = {
+           context.report({
+             node: styleAttr,
+             messageId: MESSAGE_IDS.INLINE_STYLE,
++            fix(fixer) {
++              return fixer.remove(styleAttr);
++            }
+           });
+         }
+       },
+diff --git a/node_modules/@html-eslint/eslint-plugin/lib/rules/no-trailing-br.js b/node_modules/@html-eslint/eslint-plugin/lib/rules/no-trailing-br.js
+new file mode 100644
+index 0000000..a88b3e8
+--- /dev/null
++++ b/node_modules/@html-eslint/eslint-plugin/lib/rules/no-trailing-br.js
+@@ -0,0 +1,48 @@
++const { RULE_CATEGORY } = require("../constants");
++
++const MESSAGE_IDS = {
++  INVALID: "invalid",
++};
++
++const isTrailing = (node) => {
++  const siblings = (node.parent.children || node.parent.body).filter((n) => n.type === "Tag")
++  return node === siblings.at(0) || node === siblings.at(-1)
++}
++
++module.exports = {
++  meta: {
++    type: "code",
++
++    docs: {
++      description: "Deny the use of trailing breaks",
++      category: RULE_CATEGORY.BEST_PRACTICE,
++      recommended: true,
++    },
++
++    fixable: true,
++    schema: [],
++    messages: {
++      [MESSAGE_IDS.INVALID]:
++          "Invalid trailing `<br>`. `<br>` should be used for line breaks only.",
++    },
++  },
++
++  create(context) {
++    return {
++      Tag(node) {
++        if (node.name !== "br") {
++          return;
++        }
++        if (!node.parent || isTrailing(node)) {
++          context.report({
++            node,
++            messageId: MESSAGE_IDS.INVALID,
++            fix(fixer) {
++              return fixer.remove(node)
++            }
++          });
++        }
++      },
++    };
++  },
++};
+diff --git a/node_modules/@html-eslint/eslint-plugin/lib/rules/require-list-container.js b/node_modules/@html-eslint/eslint-plugin/lib/rules/require-list-container.js
+new file mode 100644
+index 0000000..cc6ce28
+--- /dev/null
++++ b/node_modules/@html-eslint/eslint-plugin/lib/rules/require-list-container.js
+@@ -0,0 +1,49 @@
++const { RULE_CATEGORY } = require("../constants");
++
++const MESSAGE_IDS = {
++  INVALID: "invalid",
++};
++
++const VALID_CONTAINERS = ["ul", "ol"];
++
++module.exports = {
++  meta: {
++    type: "code",
++
++    docs: {
++      description: "Enforce nested lists to be in `<li>`.",
++      category: RULE_CATEGORY.BEST_PRACTICE,
++      recommended: true,
++    },
++
++    fixable: true,
++    schema: [],
++    messages: {
++      [MESSAGE_IDS.INVALID]:
++        "Invalid nested list. `<li>` should be used for nested `<ul>` or `<ol>`.",
++    },
++  },
++
++  create(context) {
++    return {
++      Tag(node) {
++        if (!VALID_CONTAINERS.includes(node.name)) {
++          return;
++        }
++        const nestedList = node.children.find((node) => node.type === "Tag" && VALID_CONTAINERS.includes(node.name));
++        if (nestedList) {
++          context.report({
++            node: nestedList,
++            messageId: MESSAGE_IDS.INVALID,
++            fix(fixer) {;
++              return [
++                  fixer.insertTextBefore(nestedList, "<li>\n"),
++                  fixer.insertTextAfter(nestedList, "\n</li>")
++              ];
++            },
++          });
++        }
++      },
++    };
++  },
++};
+diff --git a/node_modules/@html-eslint/eslint-plugin/lib/rules/require-text-context.js b/node_modules/@html-eslint/eslint-plugin/lib/rules/require-text-context.js
+new file mode 100644
+index 0000000..508c846
+--- /dev/null
++++ b/node_modules/@html-eslint/eslint-plugin/lib/rules/require-text-context.js
+@@ -0,0 +1,79 @@
++const { RULE_CATEGORY } = require("../constants");
++
++const MESSAGE_IDS = {
++  INVALID: "invalid",
++};
++
++const VALID_CONTAINERS = [
++  "h1", "h2", "h3", "h4", "h5", "h6",
++  "p", "pre", "blockquote", "li", "dt", "dd", "figcaption"
++];
++const CONTAINERS = [...VALID_CONTAINERS,
++  "ul", "ol", "dl", "hr", "figure"
++]
++const TEXT_LEVEL_ELEMENTS = [
++    "a",
++    "em",
++    "strong",
++    "cite",
++    "q",
++    "code",
++    "i",
++    "b",
++    "mark",
++    "del",
++    "ins",
++    "span",
++]
++
++module.exports = {
++  meta: {
++    type: "code",
++
++    docs: {
++      description: "Enforce text level elements to be in phrase context.",
++      category: RULE_CATEGORY.BEST_PRACTICE,
++      recommended: true,
++    },
++
++    fixable: true,
++    schema: [],
++    messages: {
++      [MESSAGE_IDS.INVALID]:
++        "Invalid context of text level element.",
++    },
++  },
++
++  create(context) {
++    return {
++      Tag(node) {
++        if (!TEXT_LEVEL_ELEMENTS.includes(node.name)) {
++          return;
++        }
++        if (!node.parent) {
++          context.report({
++            node,
++            messageId: MESSAGE_IDS.INVALID,
++          });
++        } else if (!VALID_CONTAINERS.includes(node.parent.name)) {
++          const children = node.parent.children || node.parent.body;
++          const index = children.indexOf(node);
++          const prev = children.findLastIndex((node, i) => i < index && node.type === "Tag" && CONTAINERS.includes(node.name));
++          const next = children.findIndex((node, i) => i > index && node.type === "Tag" && CONTAINERS.includes(node.name));
++          const prevNode = children[prev === -1 ? 0 : prev];
++          const nextNode = children[next === -1 ? children.length - 1 : next];
++          context.report({
++            node,
++            messageId: MESSAGE_IDS.INVALID,
++            fix(fixer) {;
++              return [
++                  prevNode === node ? fixer.insertTextBefore(node, "<p>") : fixer.insertTextAfter(prevNode, "<p>"),
++                  nextNode === node ? fixer.insertTextAfter(node, "</p>") : fixer.insertTextBefore(nextNode, "</p>")
++              ];
++            },
++          });
++        }
++      },
++    };
++  },
++};
+diff --git a/node_modules/@html-eslint/eslint-plugin/lib/rules/utils/node-utils.js b/node_modules/@html-eslint/eslint-plugin/lib/rules/utils/node-utils.js
+index 0bed66c..23cf401 100644
+--- a/node_modules/@html-eslint/eslint-plugin/lib/rules/utils/node-utils.js
++++ b/node_modules/@html-eslint/eslint-plugin/lib/rules/utils/node-utils.js
+@@ -10,7 +10,7 @@
+  */
+ 
+ module.exports = {
+-  /*
++  /**
+    * @param {TagNode} node
+    * @param {string} name
+    * @returns {AttributeNode | undefined}
